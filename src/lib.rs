@@ -1,15 +1,22 @@
 #![no_std]
+#![feature(generic_const_exprs)]
+#![feature(const_option)]
 
+// Imports //
 use crc::Crc;
 
+// Modules //
 pub mod data_entry;
 
+use crate::data_entry::Entry;
+
+// Constants //
 const CRC_CALC: Crc<u16> = Crc::<u16>::new(&crc::CRC_16_USB);
 
 /// A packet containing data ready for transmission. Contains a 16-bit CRC for
 /// error checking.
 #[repr(C)]
-pub struct Packet<const L: usize> {
+pub struct Packet<'a> {
     /// The packet's version. Version 1 packets must always have this field
     /// set to 0x01
     version: u8,
@@ -19,28 +26,31 @@ pub struct Packet<const L: usize> {
     length: usize,
 
     /// Data contained within the packet.
-    data: [u8; L],
+    data: &'a [u8],
 
     /// A 16-bit CRC calculated using the USB CRC equation.
     crc: u16,
 }
 
-impl<const L: usize> Packet<L> {
-
+impl<'a> Packet<'a> {
+    pub fn new() -> Self {
+        Self {
+            version: 0x01,
+            length: 0,
+            data: &[0u8; 255],
+            crc: 0
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use self::data_entry::{DataId, Entry};
+    use self::data_entry::{Id, Entry};
     use super::*;
 
     #[test]
     fn entry_from_array() {
-        Entry::from_array(DataId::Temperature, [0u8; 2]);
-    }
-
-    #[test]
-    fn entry_from_int() {
-        Entry::<2>::from_int(DataId::Temperature, 20);
+        Entry::from_array(Id::Temperature, 28i16.to_le_bytes());
+        Entry::from_array(Id::Text, *b"Hello, world!");
     }
 }
