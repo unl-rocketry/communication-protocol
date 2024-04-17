@@ -1,20 +1,18 @@
 #![no_std]
-#![feature(generic_const_exprs)]
-#![feature(const_option)]
 
 // Imports //
 use crc::Crc;
+use data_entry::Entry;
 
 // Modules //
 pub mod data_entry;
-
-use crate::data_entry::Entry;
 
 // Constants //
 const CRC_CALC: Crc<u16> = Crc::<u16>::new(&crc::CRC_16_USB);
 
 /// A packet containing data ready for transmission. Contains a 16-bit CRC for
 /// error checking.
+#[derive(Debug)]
 #[repr(C)]
 pub struct Packet<'a> {
     /// The packet's version. Version 1 packets must always have this field
@@ -26,20 +24,30 @@ pub struct Packet<'a> {
     length: usize,
 
     /// Data contained within the packet.
-    data: &'a [u8],
+    data: &'a mut [u8],
 
     /// A 16-bit CRC calculated using the USB CRC equation.
-    crc: u16,
+    crc: Option<u16>,
 }
 
 impl<'a> Packet<'a> {
-    pub fn new() -> Self {
+    /// Create a packet with a sized buffer as the base
+    pub fn from_buffer(buf: &'a mut [u8]) -> Self {
         Self {
             version: 0x01,
             length: 0,
-            data: &[0u8; 255],
-            crc: 0
+            data: buf,
+            crc: None,
         }
+    }
+
+    /// Push a new entry into the packet's data
+    pub fn push<const S: usize>(&mut self, entry: Entry) {
+        let mut buf = [0; S];
+        entry.into_buf(&mut buf);
+
+        self.data[self.length..self.length + entry.size()].copy_from_slice(&buf[..entry.size()]);
+        self.length += entry.size();
     }
 }
 
@@ -50,7 +58,7 @@ mod tests {
 
     #[test]
     fn entry_from_array() {
-        Entry::from_array(Id::Temperature, 28i16.to_le_bytes());
-        Entry::from_array(Id::Text, *b"Hello, world!");
+        Entry::from_array(Id::Temperature, &28i16.to_le_bytes());
+        Entry::from_array(Id::Text, b"Hello, world!");
     }
 }

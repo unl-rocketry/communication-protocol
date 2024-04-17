@@ -1,11 +1,7 @@
-use rkyv::{Archive, Deserialize, Serialize};
-use rkyv::ser::{Serializer, serializers::BufferSerializer};
-
 /// Identifier expressing information about the data in an [Entry].
 #[non_exhaustive]
 #[repr(u8)]
-#[derive(Archive, Deserialize, Serialize)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Id {
     /// Raw binary data
     ///
@@ -41,60 +37,65 @@ impl Id {
     }
 }
 
-#[derive(Archive, Deserialize, Serialize)]
 #[derive(Debug)]
 #[repr(align(1))]
-pub struct Entry<const L: usize> {
+pub struct Entry<'a> {
     id: Id,
     length: u16,
-    data: [u8; L],
+    data: &'a [u8],
 }
 
-impl<const L: usize> Entry<L> {
-    /// Return the [Id] of the data
+impl<'a> Entry<'a> {
+    /// The [Id] of the data
     pub const fn id(&self) -> &Id {
         &self.id
     }
 
-    /// Return the length of the contained data.
-    pub const fn len(&self) -> usize {
+    /// The length of the contained data.
+    pub const fn data_size(&self) -> usize {
         self.length as usize
     }
 
-    /// Return the contained raw data, consuming the [Entry].
-    pub const fn into_data(self) -> [u8; L] {
+    /// The size of the [Entry] in bytes
+    pub const fn size(&self) -> usize {
+        self.length as usize + 3
+    }
+
+    /// Gets the contained raw data, consuming the [Entry].
+    pub const fn into_data(self) -> &'a [u8] {
         self.data
     }
 
-    /// Return a reference into the contained raw data.
+    /// Gets a reference into the contained raw data.
     pub const fn data(&self) -> &[u8] {
         &self.data
     }
 
-    pub fn to_bytes(self) -> [u8; L + 5] where [(); L + 5]: {
-        if L + 5 >= 65536 {
-            panic!("`L` + 3 is >= 65535, too large!")
+    /// Write [Self] into a provided buffer
+    pub fn into_buf(&self, buf: &mut [u8]) {
+        if self.size() > 65535 {
+            panic!("Data is too large: {} > 65535", self.size())
         }
 
-        // Serialize the struct to a buffer
-        let mut serializer = BufferSerializer::new([0u8; L + 5]);
-        serializer.serialize_value(&self)
-            .expect("Failed to serialize entry");
+        if self.size() > buf.len() {
+            panic!("`Self` is larger than the buffer: {} > {}", self.size(), buf.len())
+        }
 
-        // Return the filled buffer
-        serializer.into_inner()
+        buf[0] = self.id as u8;
+        buf[1..=2].copy_from_slice(&self.length.to_le_bytes());
+        buf[3..self.length as usize + 3].copy_from_slice(&self.data);
     }
 
     /// Create a new entry from an [Id] and data.
-    pub const fn from_array(id: Id, data: [u8; L]) -> Entry<L> {
-        assert!(L <= 65536, "Length of data must be <= 65536");
-        if id.length().is_some() && id.length().unwrap() != L {
-            panic!("Length of `L` and id do not match!");
+    pub fn from_array(id: Id, data: &[u8]) -> Entry {
+        assert!(data.len() <= 65535, "Data is too large: {} > 65535", data.len());
+        if id.length().is_some() && id.length().unwrap() != data.len() {
+            panic!("Length of data and Id do not match: {} != {}", id.length().unwrap(), data.len());
         }
 
-        Entry::<L> {
+        Entry {
             id,
-            length: L as u16,
+            length: data.len() as u16,
             data,
         }
     }
