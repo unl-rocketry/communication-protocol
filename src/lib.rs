@@ -25,9 +25,6 @@ pub struct Packet<'a> {
 
     /// Data contained within the packet.
     data: &'a mut [u8],
-
-    /// A 16-bit CRC calculated using the USB CRC equation.
-    crc: Option<u16>,
 }
 
 impl<'a> Packet<'a> {
@@ -37,14 +34,44 @@ impl<'a> Packet<'a> {
             version: 0x01,
             length: 0,
             data: buf,
-            crc: None,
         }
     }
 
-    /// Push a new entry into the packet's data
-    pub fn push<const S: usize>(&mut self, entry: Entry) {
-        let mut buf = [0; S];
+    pub const fn size(&self) -> usize {
+        self.length + 3
+    }
+
+    pub const fn size_crc(&self) -> usize {
+        self.size() + 2
+    }
+
+    /// Write [Self] into a provided buffer, while also calculating the CRC
+    pub fn into_buf(&self, buf: &mut [u8]) {
+        if self.size() > buf.len() {
+            panic!("`Self` is larger than the buffer: {} > {}", self.size(), buf.len())
+        }
+
+        buf[0] = self.version;
+        buf[1..=2].copy_from_slice(&(self.length as u16).to_le_bytes());
+        buf[3..self.size()].copy_from_slice(&self.data[0..self.length]);
+
+        let crc = CRC_CALC.checksum(&buf[..self.size()]);
+
+        buf[self.size()..=self.size() + 1].copy_from_slice(&crc.to_le_bytes());
+    }
+
+    /// Push a new entry into the packet's data.
+    pub fn push(&mut self, entry: Entry) {
+        let mut buf = [0; 1024];
         entry.into_buf(&mut buf);
+
+        self.data[self.length..self.length + entry.size()].copy_from_slice(&buf[..entry.size()]);
+        self.length += entry.size();
+    }
+
+    /// Push a new entry into the packet's data using a provided buffer.
+    pub fn buf_push(&mut self, entry: Entry, buf: &'a mut [u8]) {
+        entry.into_buf(buf);
 
         self.data[self.length..self.length + entry.size()].copy_from_slice(&buf[..entry.size()]);
         self.length += entry.size();
@@ -57,8 +84,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn entry_from_array() {
-        Entry::from_array(Id::Temperature, &28i16.to_le_bytes());
-        Entry::from_array(Id::Text, b"Hello, world!");
+    fn entry_from_slice() {
+        Entry::from_slice(Id::Temperature, &28i16.to_le_bytes());
+        Entry::from_slice(Id::Text, b"Hello, world!");
     }
 }

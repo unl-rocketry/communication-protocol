@@ -68,7 +68,7 @@ impl<'a> Entry<'a> {
 
     /// Gets a reference into the contained raw data.
     pub const fn data(&self) -> &[u8] {
-        &self.data
+        self.data
     }
 
     /// Write [Self] into a provided buffer
@@ -83,11 +83,11 @@ impl<'a> Entry<'a> {
 
         buf[0] = self.id as u8;
         buf[1..=2].copy_from_slice(&self.length.to_le_bytes());
-        buf[3..self.length as usize + 3].copy_from_slice(&self.data);
+        buf[3..self.length as usize + 3].copy_from_slice(self.data);
     }
 
     /// Create a new entry from an [Id] and data.
-    pub fn from_array(id: Id, data: &[u8]) -> Entry {
+    pub fn from_slice(id: Id, data: &[u8]) -> Entry {
         assert!(data.len() <= 65535, "Data is too large: {} > 65535", data.len());
         if id.length().is_some() && id.length().unwrap() != data.len() {
             panic!("Length of data and Id do not match: {} != {}", id.length().unwrap(), data.len());
